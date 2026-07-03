@@ -11,26 +11,27 @@ Exercício prático para treinar a construção de um sistema de login/senha que
 - **Frontend + Backend:** Next.js (App Router), TypeScript, Tailwind CSS
 - **Autenticação:** Supabase Auth (email/senha), gerenciada via `@supabase/ssr` (sessão em cookies)
 - **Banco de dados:** Supabase Postgres (cloud), tabela `leads` (nome, email, status, criado_em)
-- **Proteção de dados:** Row Level Security (RLS) na tabela `leads`, com policy explícita: qualquer usuário autenticado pode SELECT/INSERT/UPDATE (modelo de CRM compartilhado pela equipe — **não há isolamento por usuário**, não existe coluna de dono/`user_id`). Anônimo (sem sessão) não acessa nada.
+- **Proteção de dados:** Row Level Security (RLS) na tabela `leads`, com policy explícita: qualquer usuário autenticado pode SELECT/INSERT/UPDATE (modelo de CRM compartilhado pela equipe — **não há isolamento por usuário**, não existe coluna de dono/`user_id`). Anônimo (sem sessão) não acessa nada. Não há operação de exclusão de lead no exercício, então a policy **não concede DELETE** — só as três operações realmente usadas.
   ```sql
   alter table leads enable row level security;
 
   create policy "authenticated_full_access" on leads
-    for all
+    for select, insert, update
     to authenticated
     using (true)
     with check (true);
   ```
+  Esse modelo "compartilhado" (`using (true)`) só é aceitável porque **não existe cadastro público de conta** (ver "Criação de usuário" abaixo) — todo usuário autenticado é criado manualmente e é, por definição, confiável. Se no futuro for adicionado cadastro público, essa policy precisa ser revisada junto.
 - **Deploy:** Docker container rodando em VPS via EasyPanel; Supabase permanece 100% no Supabase Cloud
 
 ## Páginas e componentes
 
-- **`/login`** — formulário público (email + senha), usa `supabase.auth.signInWithPassword()`. Se o usuário já tiver sessão válida e acessar `/login` diretamente, redireciona para `/dashboard` (evita reexibir o formulário para quem já está logado)
+- **`/login`** — formulário público (email + senha), usa `supabase.auth.signInWithPassword()`. A própria página `/login` (Server Component) chama `getUser()` no carregamento; se já houver usuário válido, redireciona para `/dashboard` antes de renderizar o formulário — essa checagem fica na página, não no middleware, para não misturar essa regra com o matcher de rotas protegidas
 - **`/dashboard`** — rota protegida:
   - Cabeçalho com "Bem-vindo, [email]" e botão "Sair"
   - Tabela de leads (nome, email, status) vinda do Supabase
   - Formulário para adicionar novo lead
-- **`middleware.ts`** — em toda requisição, chama `supabase.auth.getUser()` (não `getSession()`) para revalidar o token direto com o servidor do Supabase — evita confiar em cookie local potencialmente expirado ou adulterado. Sem usuário válido em rota protegida → redireciona para `/login`. Também é responsável por regravar o cookie de sessão renovado a cada requisição, conforme exigido pelo `@supabase/ssr`
+- **`middleware.ts`** — em toda requisição, chama `supabase.auth.getUser()` (não `getSession()`) para revalidar o token direto com o servidor do Supabase — evita confiar em cookie local potencialmente expirado ou adulterado. Sem usuário válido em rota protegida → redireciona para `/login`. O cookie de sessão renovado precisa ser setado tanto no objeto `request` quanto no `response` reconstruído (`NextResponse.next({ request })` seguido de `response.cookies.set(...)`) — é assim que o `@supabase/ssr` propaga a sessão renovada para os Server Components na mesma requisição; setar só num dos dois faz a sessão cair de forma inconsistente
 - **Criação de usuário:** não há tela pública de cadastro (CRM interno). Usuário de teste é criado direto no painel do Supabase (Authentication → Users)
 
 ## Fluxo de dados
@@ -44,7 +45,7 @@ Exercício prático para treinar a construção de um sistema de login/senha que
 **Acesso ao dashboard:**
 1. Middleware chama `getUser()` a cada requisição para validar a sessão junto ao Supabase
 2. Sem usuário válido → redireciona para `/login`
-3. Com sessão válida → página busca os leads usando o token do usuário logado (não chave admin); RLS garante que só usuários autenticados acessam a tabela (não há isolamento por usuário — ver policy na seção de Arquitetura)
+3. Com sessão válida → página busca os leads usando o token do usuário logado (não chave admin); RLS garante que só usuários autenticados acessam a tabela, com SELECT/INSERT/UPDATE liberados a qualquer autenticado (não há isolamento por usuário — ver policy completa na seção de Arquitetura)
 4. Logout: `supabase.auth.signOut()` limpa sessão e redireciona para `/login`
 
 **Cadastro de lead:**
@@ -70,7 +71,8 @@ Validação manual (sem suíte automatizada nesta versão):
 - Acesso a `/dashboard` sem sessão → redireciona para login
 - Logout → volta ao login e bloqueia acesso subsequente
 - Cadastro de lead → aparece na tabela
-- RLS: acesso à tabela `leads` sem token (anônimo) deve falhar; com token de qualquer usuário autenticado deve funcionar
+- RLS: acesso à tabela `leads` sem token (anônimo) deve falhar
+- RLS (acesso compartilhado): criar um segundo usuário de teste no Supabase e confirmar que ele consegue ver os leads criados pelo primeiro usuário — prova de fato o modelo compartilhado (uma única conta de teste não é suficiente para validar isso)
 
 ## Deploy (VPS + EasyPanel)
 

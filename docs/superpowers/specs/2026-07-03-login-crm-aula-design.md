@@ -11,27 +11,37 @@ Exercício prático para treinar a construção de um sistema de login/senha que
 - **Frontend + Backend:** Next.js (App Router), TypeScript, Tailwind CSS
 - **Autenticação:** Supabase Auth (email/senha), gerenciada via `@supabase/ssr` (sessão em cookies)
 - **Banco de dados:** Supabase Postgres (cloud), tabela `leads` (nome, email, status, criado_em)
-- **Proteção de dados:** Row Level Security (RLS) na tabela `leads`, com policy explícita: qualquer usuário autenticado pode SELECT/INSERT/UPDATE (modelo de CRM compartilhado pela equipe — **não há isolamento por usuário**, não existe coluna de dono/`user_id`). Anônimo (sem sessão) não acessa nada. Não há operação de exclusão de lead no exercício, então a policy **não concede DELETE** — só as três operações realmente usadas.
+- **Proteção de dados:** Row Level Security (RLS) na tabela `leads`, com policy explícita: qualquer usuário autenticado pode SELECT/INSERT/UPDATE (modelo de CRM compartilhado pela equipe — não há isolamento por usuário, não existe coluna de dono/`user_id`). Anônimo (sem sessão) não acessa nada. Não há operação de exclusão de lead no exercício, então nenhuma policy concede DELETE. O `CREATE POLICY` do Postgres só aceita uma operação por `FOR` (não uma lista), e cada tipo de operação aceita cláusulas diferentes (SELECT só `USING`; INSERT só `WITH CHECK`; UPDATE aceita os dois) — por isso são três policies separadas:
   ```sql
   alter table leads enable row level security;
 
-  create policy "authenticated_full_access" on leads
-    for select, insert, update
+  create policy "authenticated_can_select" on leads
+    for select
+    to authenticated
+    using (true);
+
+  create policy "authenticated_can_insert" on leads
+    for insert
+    to authenticated
+    with check (true);
+
+  create policy "authenticated_can_update" on leads
+    for update
     to authenticated
     using (true)
     with check (true);
   ```
-  Esse modelo "compartilhado" (`using (true)`) só é aceitável porque **não existe cadastro público de conta** (ver "Criação de usuário" abaixo) — todo usuário autenticado é criado manualmente e é, por definição, confiável. Se no futuro for adicionado cadastro público, essa policy precisa ser revisada junto.
+  Esse modelo "compartilhado" (`using (true)`) só é aceitável porque não existe cadastro público de conta (ver "Criação de usuário" abaixo) — todo usuário autenticado é criado manualmente e é, por definição, confiável. Se no futuro for adicionado cadastro público, essas policies precisam ser revisadas junto.
 - **Deploy:** Docker container rodando em VPS via EasyPanel; Supabase permanece 100% no Supabase Cloud
 
 ## Páginas e componentes
 
-- **`/login`** — formulário público (email + senha), usa `supabase.auth.signInWithPassword()`. A própria página `/login` (Server Component) chama `getUser()` no carregamento; se já houver usuário válido, redireciona para `/dashboard` antes de renderizar o formulário — essa checagem fica na página, não no middleware, para não misturar essa regra com o matcher de rotas protegidas
+- **`/login`** — página composta por duas partes: um Server Component externo que chama `getUser()` no carregamento (se já houver usuário válido, redireciona para `/dashboard` antes de renderizar qualquer coisa) e, dentro dele, um Client Component (`"use client"`) com o formulário (email + senha) que chama `supabase.auth.signInWithPassword()` — a chamada de login depende de APIs de navegador/cookie e por isso não pode rodar direto no Server Component
 - **`/dashboard`** — rota protegida:
   - Cabeçalho com "Bem-vindo, [email]" e botão "Sair"
   - Tabela de leads (nome, email, status) vinda do Supabase
   - Formulário para adicionar novo lead
-- **`middleware.ts`** — em toda requisição, chama `supabase.auth.getUser()` (não `getSession()`) para revalidar o token direto com o servidor do Supabase — evita confiar em cookie local potencialmente expirado ou adulterado. Sem usuário válido em rota protegida → redireciona para `/login`. O cookie de sessão renovado precisa ser setado tanto no objeto `request` quanto no `response` reconstruído (`NextResponse.next({ request })` seguido de `response.cookies.set(...)`) — é assim que o `@supabase/ssr` propaga a sessão renovada para os Server Components na mesma requisição; setar só num dos dois faz a sessão cair de forma inconsistente
+- **`middleware.ts`** — com `config.matcher` restrito a `/dashboard/:path*` (não roda em `/login` nem em assets estáticos, evitando checagem duplicada na página de login). Em toda requisição que casa com o matcher, chama `supabase.auth.getUser()` (não `getSession()`) para revalidar o token direto com o servidor do Supabase — evita confiar em cookie local potencialmente expirado ou adulterado. Sem usuário válido em rota protegida → redireciona para `/login`. O cookie de sessão renovado precisa ser setado tanto no objeto `request` quanto no `response` reconstruído (`NextResponse.next({ request })` seguido de `response.cookies.set(...)`) — é assim que o `@supabase/ssr` propaga a sessão renovada para os Server Components na mesma requisição; setar só num dos dois faz a sessão cair de forma inconsistente
 - **Criação de usuário:** não há tela pública de cadastro (CRM interno). Usuário de teste é criado direto no painel do Supabase (Authentication → Users)
 
 ## Fluxo de dados

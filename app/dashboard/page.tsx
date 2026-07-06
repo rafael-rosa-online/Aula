@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { createLead, logout } from "./actions";
+import { logout } from "./actions";
+import { LeadForm } from "./lead-form";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -43,25 +44,7 @@ export default async function DashboardPage() {
         </tbody>
       </table>
 
-      <form action={createLead} className="space-y-3 rounded border p-4">
-        <h2 className="font-semibold">Novo lead</h2>
-        <input
-          name="nome"
-          placeholder="Nome"
-          required
-          className="w-full rounded border px-3 py-2"
-        />
-        <input
-          name="email"
-          placeholder="Email"
-          type="email"
-          required
-          className="w-full rounded border px-3 py-2"
-        />
-        <button type="submit" className="rounded bg-black px-4 py-2 text-sm text-white">
-          Adicionar
-        </button>
-      </form>
+      <LeadForm />
     </main>
   );
 }

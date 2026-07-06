@@ -10,12 +10,19 @@ export async function logout() {
   redirect("/login");
 }
 
-export async function createLead(formData: FormData) {
+export type CreateLeadState = {
+  error: string | null;
+};
+
+export async function createLead(
+  _prevState: CreateLeadState,
+  formData: FormData
+): Promise<CreateLeadState> {
   const nome = formData.get("nome") as string;
   const email = formData.get("email") as string;
 
   if (!nome || !email) {
-    throw new Error("Nome e email são obrigatórios");
+    return { error: "Nome e email são obrigatórios" };
   }
 
   const supabase = await createClient();
@@ -24,8 +31,9 @@ export async function createLead(formData: FormData) {
     .insert({ nome, email, status: "novo" });
 
   if (error) {
-    throw new Error("Não foi possível conectar, tente novamente");
+    return { error: "Não foi possível conectar, tente novamente" };
   }
 
   revalidatePath("/dashboard");
+  return { error: null };
 }

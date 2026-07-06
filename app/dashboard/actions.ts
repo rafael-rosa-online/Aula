@@ -6,7 +6,13 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function logout() {
   const supabase = await createClient();
-  await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    // Não há UI de erro plugada neste form fire-and-forget; registramos
+    // para diagnóstico e ainda assim redirecionamos, pois o redirect()
+    // via response já derruba os cookies de sessão no cliente.
+    console.error("Erro ao encerrar sessão:", error.message);
+  }
   redirect("/login");
 }
 
@@ -26,11 +32,24 @@ export async function createLead(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("aula_leads")
-    .insert({ nome, email, status: "novo" });
 
-  if (error) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "Sessão expirada, faça login novamente." };
+  }
+
+  try {
+    const { error } = await supabase
+      .from("aula_leads")
+      .insert({ nome, email, status: "novo" });
+
+    if (error) {
+      return { error: "Não foi possível conectar, tente novamente" };
+    }
+  } catch {
     return { error: "Não foi possível conectar, tente novamente" };
   }
 

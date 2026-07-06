@@ -5,14 +5,18 @@ import { LeadForm } from "./lead-form";
 export default async function DashboardPage() {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: leads } = await supabase
-    .from("aula_leads")
-    .select("*")
-    .order("criado_em", { ascending: false });
+  const [
+    {
+      data: { user },
+    },
+    { data: leads, error: leadsError },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("aula_leads")
+      .select("*")
+      .order("criado_em", { ascending: false }),
+  ]);
 
   return (
     <main className="mx-auto max-w-2xl space-y-8 p-8">
@@ -25,24 +29,28 @@ export default async function DashboardPage() {
         </form>
       </header>
 
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b text-left">
-            <th className="py-2">Nome</th>
-            <th className="py-2">Email</th>
-            <th className="py-2">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {leads?.map((lead) => (
-            <tr key={lead.id} className="border-b">
-              <td className="py-2">{lead.nome}</td>
-              <td className="py-2">{lead.email}</td>
-              <td className="py-2">{lead.status}</td>
+      {leadsError ? (
+        <p className="text-sm text-red-600">Não foi possível carregar os leads.</p>
+      ) : (
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b text-left">
+              <th className="py-2">Nome</th>
+              <th className="py-2">Email</th>
+              <th className="py-2">Status</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {leads?.map((lead) => (
+              <tr key={lead.id} className="border-b">
+                <td className="py-2">{lead.nome}</td>
+                <td className="py-2">{lead.email}</td>
+                <td className="py-2">{lead.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <LeadForm />
     </main>
